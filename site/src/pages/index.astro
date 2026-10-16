@@ -1,0 +1,305 @@
+---
+import Base from "../layouts/Base.astro";
+import data from "../data/e4eit.json";
+
+const domainTitle = (id: string) => data.domains.find((d) => d.id === id)!.title;
+const phaseOfDomain = (id: string) => data.domains.find((d) => d.id === id)!.phase;
+const controlById = new Map(data.controls.map((c) => [c.id, c]));
+const techniques = [...new Set(data.controls.flatMap((c) => c.techniques.map((t) => t.name)))].sort((a, b) => a.localeCompare(b));
+const technical = data.domains.filter((d) => d.kind === "technical");
+const capability = data.domains.filter((d) => d.kind === "capability");
+const levels = [
+  { key: "not", label: "Not effective" },
+  { key: "partial", label: "Partially effective" },
+  { key: "fully", label: "Fully effective" },
+] as const;
+const metrics = [
+  { id: "total", label: "Actions in scope", foot: "Across in-scope domains", tone: "accent" },
+  { id: "assessed", label: "Assessed", foot: "Actions with a rating", tone: "" },
+  { id: "fully", label: "Fully effective", foot: "", tone: "good" },
+  { id: "partial", label: "Partially effective", foot: "", tone: "warn" },
+  { id: "not", label: "Not effective", foot: "", tone: "bad" },
+  { id: "unassessed", label: "Not assessed", foot: "", tone: "" },
+];
+const phaseLabel = (id: number) => `Phase ${id}`;
+---
+<Base
+  title="E4EIT Assurance: assess against ASD Essentials for enterprise IT | EmDash Cyber"
+  description="A private, in-browser tool to scope, assess and report on the ASD Essentials for enterprise IT actions and indicators of good practice."
+>
+  <section class="hero" aria-label="Overview">
+    <p class="eyebrow">Assurance tool</p>
+    <h1>Assess your enterprise IT against the ASD Essentials</h1>
+    <p class="lede">
+      Scope the eight domains, record what you observe against ASD's indicators of good practice for each action, and see where the gaps are.
+    </p>
+    <p class="note note-privacy">
+      <strong>Your assessment stays in this browser.</strong> Nothing is sent anywhere. Progress is saved in local storage on this device; use Export to keep a copy or move it between browsers.
+    </p>
+    <p class="note">
+      <strong>A working aid, not a score.</strong> Priority phases are a sequencing mechanism and not a maturity rating. Ratings here are your own judgement against ASD's published indicators and are not an ASD or IRAP assessment.
+    </p>
+    <p class="hero-meta">
+      <span>Catalog {data.catalog.version}</span>
+      <span>OSCAL {data.catalog.oscalVersion}</span>
+      <span>{data.controls.length} actions</span>
+      <span>{data.principles.length} principles</span>
+      <a href={data.catalog.source}>Source: ASD E4EIT OSCAL</a>
+    </p>
+  </section>
+
+  <noscript><p class="note note-warn">This tool needs JavaScript to record and summarise an assessment. The reference content below is still readable.</p></noscript>
+
+  <nav class="section-nav" aria-label="On this page">
+    <a href="#assessment">Assessment</a>
+    <a href="#scope">Scope</a>
+    <a href="#summary">Summary</a>
+    <a href="#gaps">Gaps</a>
+    <a href="#actions">Actions</a>
+  </nav>
+
+  <section id="assessment" class="block" aria-labelledby="assessment-title">
+    <div class="section-heading"><h2 id="assessment-title">Assessment</h2></div>
+    <p class="print-only print-meta" id="print-meta"></p>
+    <p class="note note-warn" id="storage-warning" hidden>
+      Local storage is unavailable in this browser, so progress will be lost when the page closes. Export your assessment before leaving.
+    </p>
+    <div class="field-grid">
+      <label><span>Organisation or system</span><input type="text" data-detail="organisation" maxlength="200" autocomplete="off" /></label>
+      <label><span>Assessor</span><input type="text" data-detail="assessor" maxlength="200" autocomplete="off" /></label>
+      <label><span>Assessment date</span><input type="date" data-detail="date" /></label>
+    </div>
+    <div class="toolbar" role="group" aria-label="Assessment data">
+      <button type="button" class="btn" id="export-json">Export JSON</button>
+      <button type="button" class="btn" id="import-json">Import JSON</button>
+      <input type="file" id="import-file" accept="application/json,.json" hidden />
+      <button type="button" class="btn" id="export-csv">Export CSV</button>
+      <button type="button" class="btn" id="print-report">Print report</button>
+      <button type="button" class="btn btn-danger" id="clear-all">Clear all data</button>
+    </div>
+    <p id="data-status" class="status-line" role="status" aria-live="polite"></p>
+  </section>
+
+  <section id="scope" class="block" aria-labelledby="scope-title">
+    <div class="section-heading">
+      <h2 id="scope-title">Scope</h2>
+      <p class="result-count" id="scope-count"></p>
+    </div>
+    <p class="section-intro">
+      Mark each domain in or out of scope. Actions only count where at least one of their domains is in scope. Record a reason when you exclude a domain.
+    </p>
+    <h3>Technical domains</h3>
+    <p class="sub-intro">ASD recommends working through these in phase order.</p>
+    <div class="domain-grid">
+      {technical.map((domain) => (
+        <article class="domain-card" data-domain={domain.id}>
+          <p class="eyebrow">{phaseLabel(domain.phase as number)}</p>
+          <h4>{domain.title}</h4>
+          <p class="domain-summary">{domain.summary}</p>
+          <p class="domain-risk"><strong>Risk:</strong> {domain.risk}</p>
+          <label class="check"><input type="checkbox" data-scope-toggle checked /> <span>In scope</span></label>
+          <label class="justification" hidden><span>Reason for exclusion</span><textarea data-scope-justification rows="2" maxlength="1000"></textarea></label>
+        </article>
+      ))}
+    </div>
+    <h3>Capability domains</h3>
+    <p class="sub-intro">These apply across all phases.</p>
+    <div class="domain-grid">
+      {capability.map((domain) => (
+        <article class="domain-card" data-domain={domain.id}>
+          <p class="eyebrow">All phases</p>
+          <h4>{domain.title}</h4>
+          <p class="domain-summary">{domain.summary}</p>
+          <p class="domain-risk"><strong>Risk:</strong> {domain.risk}</p>
+          <label class="check"><input type="checkbox" data-scope-toggle checked /> <span>In scope</span></label>
+          <label class="justification" hidden><span>Reason for exclusion</span><textarea data-scope-justification rows="2" maxlength="1000"></textarea></label>
+        </article>
+      ))}
+    </div>
+  </section>
+
+  <section id="summary" class="block" aria-labelledby="summary-title">
+    <div class="section-heading">
+      <h2 id="summary-title">Summary</h2>
+      <p class="result-count" id="updated-at"></p>
+    </div>
+    <div class="metric-grid" aria-label="Assessment overview">
+      {metrics.map(({ id, label, foot, tone }) => (
+        <article class={`metric-card ${tone}`.trim()}>
+          <span class="metric-label">{label}</span>
+          <span class="metric-value" data-metric={id}>0</span>
+          <span class="metric-foot" data-metric-foot={id}>{foot}</span>
+        </article>
+      ))}
+    </div>
+    <div class="legend" aria-hidden="true">
+      <span><i class="swatch seg-fully"></i> Fully effective</span>
+      <span><i class="swatch seg-partial"></i> Partially effective</span>
+      <span><i class="swatch seg-not"></i> Not effective</span>
+      <span><i class="swatch seg-unassessed"></i> Not assessed</span>
+    </div>
+    <h3>By priority phase</h3>
+    <div class="table-wrap">
+      <table class="progress-table">
+        <thead><tr><th scope="col">Phase</th><th scope="col">Actions</th><th scope="col">Fully</th><th scope="col">Partially</th><th scope="col">Not</th><th scope="col">Not assessed</th><th scope="col">Progress</th></tr></thead>
+        <tbody id="rows-phase"></tbody>
+      </table>
+    </div>
+    <h3>By domain</h3>
+    <div class="table-wrap">
+      <table class="progress-table">
+        <thead><tr><th scope="col">Domain</th><th scope="col">Actions</th><th scope="col">Fully</th><th scope="col">Partially</th><th scope="col">Not</th><th scope="col">Not assessed</th><th scope="col">Progress</th></tr></thead>
+        <tbody id="rows-domain"></tbody>
+      </table>
+    </div>
+    <details class="principle-details">
+      <summary>By principle ({data.principles.length})</summary>
+      <div class="table-wrap">
+        <table class="progress-table">
+          <thead><tr><th scope="col">Principle</th><th scope="col">Actions</th><th scope="col">Fully</th><th scope="col">Partially</th><th scope="col">Not</th><th scope="col">Not assessed</th><th scope="col">Progress</th></tr></thead>
+          <tbody id="rows-principle"></tbody>
+        </table>
+      </div>
+    </details>
+    <p class="data-footnote">
+      Actions that apply to several domains are counted in each domain row, and once in the totals. Phases show the sequence ASD recommends; they are not a maturity level.
+    </p>
+  </section>
+
+  <section id="gaps" class="block" aria-labelledby="gaps-title">
+    <div class="section-heading">
+      <h2 id="gaps-title">Gaps</h2>
+      <p class="result-count" id="gap-count"></p>
+    </div>
+    <p class="section-intro">In-scope actions rated Not effective or Partially effective, worst first, then by priority phase.</p>
+    <ol class="gap-list" id="gap-list"></ol>
+    <p class="message-state" id="gap-empty" hidden><strong>No gaps recorded</strong><span>Rate some actions below to see gaps here.</span></p>
+  </section>
+
+  <section id="actions" class="block" aria-labelledby="actions-title">
+    <div class="section-heading">
+      <h2 id="actions-title">Actions</h2>
+      <p class="result-count" id="action-count" role="status" aria-live="polite"></p>
+    </div>
+    <p class="section-intro">
+      Tick each indicator you have seen evidence for. The suggested rating is the most cautious reading of those ticks: any Not effective indicator gives Not effective, then any Partially effective indicator gives Partially effective, and all Fully effective indicators gives Fully effective. Override it whenever your judgement differs.
+    </p>
+    <div class="filter-panel">
+      <label class="filter-search"><span>Search</span><input type="search" id="filter-text" placeholder="Action ID, principle or wording" autocomplete="off" /></label>
+      <label><span>Domain</span>
+        <select id="filter-domain">
+          <option value="">All domains</option>
+          {data.domains.map((d) => <option value={d.id}>{d.title}</option>)}
+        </select>
+      </label>
+      <label><span>Priority phase</span>
+        <select id="filter-phase">
+          <option value="">All phases</option>
+          {data.phases.map((p) => <option value={String(p.id)}>{phaseLabel(p.id)}</option>)}
+        </select>
+      </label>
+      <label><span>Principle group</span>
+        <select id="filter-family">
+          <option value="">All groups</option>
+          {data.families.map((f) => <option value={f.id}>{f.title}</option>)}
+        </select>
+      </label>
+      <label><span>Rating</span>
+        <select id="filter-rating">
+          <option value="">Any rating</option>
+          <option value="unassessed">Not assessed</option>
+          <option value="not">Not effective</option>
+          <option value="partial">Partially effective</option>
+          <option value="fully">Fully effective</option>
+        </select>
+      </label>
+      <label><span>ATT&amp;CK technique</span>
+        <select id="filter-technique">
+          <option value="">Any technique</option>
+          {techniques.map((t) => <option value={t}>{t}</option>)}
+        </select>
+      </label>
+      <div class="filter-actions"><button type="button" class="btn" id="filter-reset">Reset filters</button></div>
+    </div>
+
+    {data.families.map((family) => (
+      <div class="family" data-family-block={family.id}>
+        <h3>{family.title}</h3>
+        {data.principles.filter((p) => p.family === family.id).map((principle) => (
+          <section class="principle" data-principle-block={principle.id} aria-labelledby={`p-${principle.id}`}>
+            <h4 id={`p-${principle.id}`}><span class="principle-id">{principle.id}</span> {principle.title}</h4>
+            <p class="principle-statement">{principle.statement}</p>
+            {principle.controlIds.map((id) => {
+              const control = controlById.get(id)!;
+              const phases = [...new Set(control.domains.map(phaseOfDomain).filter(Boolean))];
+              return (
+                <details
+                  class="action"
+                  id={`action-${control.id}`}
+                  data-id={control.id}
+                  data-family={family.id}
+                  data-principle={principle.id}
+                  data-domains={control.domains.join(" ")}
+                  data-phases={phases.join(" ")}
+                  data-techniques={control.techniques.map((t) => t.name).join("|")}
+                  data-search={`${control.id} ${principle.title} ${control.action}`.toLowerCase()}
+                >
+                  <summary>
+                    <span class="action-id">{control.id}</span>
+                    <span class="action-text">{control.action}</span>
+                    <span class="status-pill" data-pill>Not assessed</span>
+                  </summary>
+                  <div class="action-body">
+                    <p class="action-meta">
+                      <strong>Applies to:</strong>
+                      {control.domains.map((d) => <span class="chip">{domainTitle(d)}</span>)}
+                    </p>
+                    {control.techniques.length > 0 && (
+                      <p class="action-meta">
+                        <strong>Mitigates (MITRE ATT&amp;CK):</strong>
+                        {control.techniques.map((t) => <a class="chip chip-link" href={t.url} rel="noopener noreferrer">{t.name}</a>)}
+                      </p>
+                    )}
+                    <div class="indicator-groups">
+                      {levels.map((level) => (
+                        <fieldset class={`indicator-group level-${level.key}`}>
+                          <legend>{level.label} indicators</legend>
+                          {control.indicators[level.key].map((indicator) => (
+                            <label class="indicator">
+                              <input type="checkbox" data-indicator={indicator.id} />
+                              <span>{indicator.text}</span>
+                            </label>
+                          ))}
+                        </fieldset>
+                      ))}
+                    </div>
+                    <p class="suggestion" data-suggestion></p>
+                    <div class="action-fields">
+                      <label><span>Rating</span>
+                        <select data-field="rating">
+                          <option value="">Use suggested rating</option>
+                          <option value="fully">Fully effective</option>
+                          <option value="partial">Partially effective</option>
+                          <option value="not">Not effective</option>
+                        </select>
+                      </label>
+                      <label><span>Owner</span><input type="text" data-field="owner" maxlength="200" autocomplete="off" /></label>
+                      <label><span>Assessed on</span><input type="date" data-field="date" /></label>
+                      <label><span>Evidence reference</span><input type="text" data-field="ref" maxlength="400" autocomplete="off" /></label>
+                      <label class="wide"><span>Evidence notes</span><textarea data-field="evidence" rows="3" maxlength="5000"></textarea></label>
+                    </div>
+                  </div>
+                </details>
+              );
+            })}
+          </section>
+        ))}
+      </div>
+    ))}
+    <p class="message-state" id="actions-empty" hidden><strong>No actions match these filters</strong><span>Reset the filters to see every action.</span></p>
+    <p class="data-footnote">
+      Action wording, indicators and technique mappings are from the ASD Essentials for enterprise IT OSCAL catalog ({data.catalog.version}), &copy; Commonwealth of Australia, CC BY 4.0. Refer to the <a href="https://www.cyber.gov.au/publication/essentials-for-enterprise-it">publication</a> and its Assessment evidence guide for how assessors should apply them.
+    </p>
+  </section>
+  <script src="../scripts/app.js"></script>
+</Base>
