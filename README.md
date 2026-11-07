@@ -35,7 +35,7 @@ Requires Node.js 22.12 or newer.
 
 ~~~sh
 cd site
-npm install
+npm ci
 npm run dev
 ~~~
 
@@ -59,3 +59,16 @@ In the repository settings, set Pages source to GitHub Actions. `.github/workflo
 - site/src/lib/model.js has the pure assessment logic (ratings, scope, summaries, import validation, CSV).
 - site/src/scripts/app.js wires the page to local storage and the export controls.
 - site/ contains the Astro site in the EmDash Cyber theme.
+
+## Repeatable validation
+
+From the repository root, use the Node major in `.node-version`:
+
+```sh
+npm --prefix site ci
+npm --prefix site run check
+```
+
+`check` runs model, preparation and persistence regressions, builds the site and verifies the output. It regenerates ignored prepared data, `site/dist` and Astro caches. PR validation has read-only repository access and runs without Pages configuration or deployment; publishing uses the same checks before the separate deployment job.
+
+The consolidated check explicitly prepares data, including when npm lifecycle hooks are disabled locally.
