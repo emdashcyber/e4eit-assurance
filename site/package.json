@@ -14,7 +14,7 @@
     "build": "astro build",
     "preview": "astro preview",
     "pretest": "npm run prepare-data",
-    "test": "node --test tests/model.test.mjs tests/prepare-data.test.mjs",
+    "test": "node --test tests/model.test.mjs tests/prepare-data.test.mjs tests/persistence.test.mjs",
     "verify": "node --test tests/verify-build.mjs",
     "check": "npm test && npm run build && npm run verify"
   },

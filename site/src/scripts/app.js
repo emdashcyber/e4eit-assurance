@@ -1,8 +1,9 @@
 import data from "../data/e4eit.json";
 import {
-  STORAGE_KEY, RATING_LABELS, actionEntry, appliesInScope, effectiveRating, emptyAction, emptyState,
+  RATING_LABELS, actionEntry, appliesInScope, effectiveRating, emptyAction, emptyState,
   gaps, inScope, normaliseState, percent, phaseOf, summarise, suggestRating, toCsv,
 } from "../lib/model.js";
+import { createAssessmentPersistence } from "../lib/persistence.js";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -10,42 +11,9 @@ const MAX_IMPORT_BYTES = 2_000_000;
 const PILL = { fully: "good", partial: "warn", not: "bad", unassessed: "dim" };
 const controlById = new Map(data.controls.map((c) => [c.id, c]));
 
-let storageOk = true;
-let state = load();
-let saveTimer = 0;
-
-function load() {
-  try {
-    window.localStorage.setItem(`${STORAGE_KEY}:probe`, "1");
-    window.localStorage.removeItem(`${STORAGE_KEY}:probe`);
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const result = normaliseState(JSON.parse(raw), data);
-      if (result.ok) return result.state;
-    }
-  } catch {
-    storageOk = false;
-  }
-  return emptyState(data);
-}
-
-function saveNow() {
-  window.clearTimeout(saveTimer);
-  saveTimer = 0;
-  state.updatedAt = new Date().toISOString();
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    storageOk = false;
-  }
-  $("#storage-warning").hidden = storageOk;
-  renderUpdated();
-}
-
-function queueSave() {
-  window.clearTimeout(saveTimer);
-  saveTimer = window.setTimeout(saveNow, 250);
-}
+let state;
+const persistence = createAssessmentPersistence({ data, getState: () => state, onChange: renderUpdated });
+state = persistence.load();
 
 function el(tag, { text, cls, attrs } = {}, children = []) {
   const node = document.createElement(tag);
@@ -61,8 +29,19 @@ function status(message) {
 }
 
 function renderUpdated() {
-  const t = state.updatedAt ? new Date(state.updatedAt) : null;
-  $("#updated-at").textContent = t && !Number.isNaN(t.getTime()) ? `Saved ${t.toLocaleString("en-AU")}` : "Nothing saved yet";
+  const { savedAt, dirty, error } = persistence.status;
+  const t = savedAt ? new Date(savedAt) : null;
+  const saved = t && !Number.isNaN(t.getTime()) ? t.toLocaleString("en-AU") : null;
+  $("#updated-at").textContent = dirty
+    ? `Unsaved changes${saved ? ` · Last saved ${saved}` : ""}`
+    : saved ? `Saved ${saved}` : "Nothing saved yet";
+  const warning = $("#storage-warning");
+  warning.hidden = !error;
+  if (error) warning.textContent = {
+    read: "The saved assessment could not be read from browser storage. Changes may not survive closing this page; export your assessment before leaving.",
+    save: "Changes could not be saved in this browser. Export your assessment before leaving to keep your latest work.",
+    clear: "The assessment could not be removed from browser storage. The previous assessment may reappear when you reload.",
+  }[error];
 }
 
 /* DOM from state */
@@ -244,7 +223,7 @@ function onActionInput(event) {
     return;
   }
   tidy(id);
-  queueSave();
+  persistence.queueSave();
   refresh();
 }
 
@@ -260,7 +239,7 @@ function onScopeInput(event) {
   } else {
     return;
   }
-  queueSave();
+  persistence.queueSave();
   refresh();
 }
 
@@ -292,7 +271,7 @@ async function importFile(file) {
   if (!result.ok) return status(result.warnings[0]);
   if (hasData() && !window.confirm("Replace the current assessment in this browser with the imported file?")) return status("Import cancelled.");
   state = result.state;
-  saveNow();
+  persistence.saveNow();
   hydrate();
   refresh();
   applyFilters();
@@ -301,18 +280,13 @@ async function importFile(file) {
 
 function clearAll() {
   if (!window.confirm("Delete the assessment stored in this browser? Export it first if you want to keep it.")) return;
+  const cleared = persistence.clear();
   state = emptyState(data);
-  try {
-    window.localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    storageOk = false;
-  }
-  $("#storage-warning").hidden = storageOk;
   hydrate();
   refresh();
   applyFilters();
   renderUpdated();
-  status("Assessment cleared.");
+  status(cleared ? "Assessment cleared." : "Assessment cleared from this tab, but the saved copy could not be removed.");
 }
 
 let reopened = [];
@@ -325,12 +299,11 @@ window.addEventListener("afterprint", () => {
   reopened = [];
 });
 window.addEventListener("pagehide", () => {
-  if (saveTimer) saveNow();
+  persistence.flush();
 });
 
 /* Wiring */
 hydrate();
-$("#storage-warning").hidden = storageOk;
 renderUpdated();
 refresh();
 applyFilters();
@@ -342,7 +315,7 @@ $("#assessment").addEventListener("input", (event) => {
   const key = event.target.dataset?.detail;
   if (!key) return;
   state.details[key] = event.target.value;
-  queueSave();
+  persistence.queueSave();
   $("#print-meta").textContent = printMeta();
 });
 for (const n of filterIds) $(`#filter-${n}`).addEventListener(n === "text" ? "input" : "change", applyFilters);
@@ -354,8 +327,7 @@ $("#gap-list").addEventListener("click", (event) => {
   reveal(link.dataset.reveal);
 });
 $("#export-json").addEventListener("click", () => {
-  saveNow();
-  download(`e4eit-assessment-${stamp()}.json`, "application/json", `${JSON.stringify(state, null, 2)}\n`);
+  download(`e4eit-assessment-${stamp()}.json`, "application/json", persistence.exportJSON());
   status("Exported assessment as JSON.");
 });
 $("#export-csv").addEventListener("click", () => {
